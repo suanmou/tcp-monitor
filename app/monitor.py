@@ -170,3 +170,69 @@ class TCPMonitor:
             "proxy_servers": proxy_server_reports,
             "summary": stats
         }
+
+    def check_proxy_health(self, rtt_threshold: float = 500.0, connection_threshold: int = 100) -> List[ProxyHealth]:
+        """检查所有代理服务器的健康状况"""
+        health_results = []
+        
+        for proxy_name, proxy_ip in self.proxy_servers.items():
+            # 获取当前连接数
+            connections = self.get_tcp_connections()
+            proxy_connections = [c for c in connections if self.get_proxy_server(c.local_address.split(':')[0]) == proxy_name]
+            connection_count = len(proxy_connections)
+            
+            # 测量RTT
+            rtt = self.get_rtt(proxy_ip, 80)  # 检查代理服务器本身的连通性
+            
+            # 评估RTT状态
+            if rtt is None:
+                rtt_status = "unavailable"
+                status = "unhealthy"
+                message = "无法连接到代理服务器"
+            elif rtt > rtt_threshold:
+                rtt_status = "slow"
+                status = "degraded"
+                message = f"RTT超出阈值({rtt}ms > {rtt_threshold}ms)"
+            else:
+                rtt_status = "normal"
+                status = "healthy"
+                message = "RTT正常"
+            
+            # 评估连接状态
+            if connection_count > connection_threshold:
+                connection_status = "high"
+                if status == "healthy":
+                    status = "degraded"
+                    message = f"连接数超出阈值({connection_count} > {connection_threshold})"
+            else:
+                connection_status = "normal"
+            
+            # 计算健康评分(0-100)
+            health_score = 100
+            if rtt is None:
+                health_score = 0
+            else:
+                if rtt > rtt_threshold:
+                    health_score -= 40
+                if connection_count > connection_threshold:
+                    health_score -= 30
+            
+            health_results.append(ProxyHealth(
+                proxy_server=proxy_name,
+                ip_address=proxy_ip,
+                status=status,
+                rtt=rtt,
+                rtt_status=rtt_status,
+                connection_count=connection_count,
+                connection_status=connection_status,
+                last_checked=datetime.now(),
+                health_score=health_score,
+                details=ProxyHealthStatus(
+                    status=status,
+                    message=message,
+                    rtt_threshold=rtt_threshold,
+                    connection_threshold=connection_threshold
+                )
+            ))
+        
+        return health_results

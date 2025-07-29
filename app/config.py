@@ -24,5 +24,10 @@ class Settings:
         "proxy-3": os.getenv("PROXY_3_IP", "127.0.0.1"),
         "proxy-3": os.getenv("PROXY_3_IP", "10.0.0.12")
     }
+    
+    # 健康检查配置
+    HEALTH_CHECK_RTT_THRESHOLD = float(os.getenv("HEALTH_CHECK_RTT_THRESHOLD", 500.0))  # 毫秒
+    HEALTH_CHECK_CONNECTION_THRESHOLD = int(os.getenv("HEALTH_CHECK_CONNECTION_THRESHOLD", 100))
+    HEALTH_CHECK_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL", 60))  # 秒
 
 settings = Settings()
