@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  tcp-monitor:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - RELOAD=False
+      - FIX_SERVER_IP=192.168.1.100
+      - FIX_SERVER_PORT=443
+      - PROXY_1_IP=10.0.0.10
+      - PROXY_2_IP=10.0.0.11
+      - PROXY_3_IP=10.0.0.12
+    restart: always
+    network_mode: host
