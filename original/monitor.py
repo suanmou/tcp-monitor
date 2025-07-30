@@ -36,7 +36,7 @@ class TCPMonitor:
             print(f"无法连接到 {dest_ip}:{dest_port} 以测量RTT")
             return None
 
-    def get_tcp_connections(self) -> List[dict]:
+    def get_tcp_connections(self, use_ss: bool = True) -> List[dict]:
         """获取所有TCP连接详情并关联到代理服务器（跨平台兼容版）"""
         connections = []
         # 根据操作系统选择不同命令
@@ -44,7 +44,11 @@ class TCPMonitor:
         if os_type == "Windows":
             cmd = ['netstat', '-ano', '-p', 'tcp']
         elif os_type == "Linux":
-            cmd = ['netstat', '-tlnp']  # Linux专用参数
+            if use_ss:
+                # 使用ss命令替代netstat
+                cmd = ['ss', '-t', '-a', '-n', '-p']  # t:tcp, a:all, n:数字格式, p:进程信息
+            else:
+                cmd = ['netstat', '-tlnp']  # Linux专用参数
         else:
             raise NotImplementedError(f"不支持的操作系统: {os_type}")
 
@@ -53,7 +57,7 @@ class TCPMonitor:
         # 解析逻辑适配不同系统输出
         for line in result.splitlines():
             # 统一过滤连接状态
-            if 'ESTABLISHED' in line or 'SYN_SENT' in line or 'TIME_WAIT' in line:
+            if 'ESTABLISHED' in line or 'SYN-SENT' in line or 'TIME-WAIT' in line:
                 # Windows格式解析
                 if os_type == "Windows":
                     parts = re.split(r'\s+', line.strip())
@@ -64,14 +68,28 @@ class TCPMonitor:
                         pid = parts[4]
                 # Linux格式解析
                 else:
-                    parts = re.split(r'\s+', line.strip())
-                    if len(parts) >= 7:
-                        local_addr = parts[3]
-                        remote_addr = parts[4]
-                        status = parts[5]
-                        # 提取PID（格式: 1234/process_name）
-                        pid_info = parts[6]
-                        pid = pid_info.split('/')[0] if '/' in pid_info else pid_info
+                    if use_ss:
+                        # ss命令输出格式解析
+                        parts = re.split(r'\s+', line.strip())
+                        if len(parts) >= 6:
+                            # ss输出格式: 状态 recv-q send-q 本地地址:端口 远程地址:端口 进程信息
+                            status = parts[0]
+                            local_addr = parts[3]
+                            remote_addr = parts[4]
+                            # 提取PID（格式: users:("user",pid=1234,fd=5)）
+                            pid_info = parts[5]
+                            pid_match = re.search(r'pid=(\d+)', pid_info)
+                            pid = pid_match.group(1) if pid_match else None
+                    else:
+                        # 原netstat解析逻辑
+                        parts = re.split(r'\s+', line.strip())
+                        if len(parts) >= 7:
+                            local_addr = parts[3]
+                            remote_addr = parts[4]
+                            status = parts[5]
+                            # 提取PID（格式: 1234/process_name）
+                            pid_info = parts[6]
+                            pid = pid_info.split('/')[0] if '/' in pid_info else pid_info
 
                     # 检查是否是目标FIX服务器
                     if self.fix_server_ip in remote_addr and str(self.fix_server_port) in remote_addr:
@@ -80,7 +98,7 @@ class TCPMonitor:
                             continue
 
                         # 获取进程名（简单实现）
-                        process_name = f'process_{pid}'
+                        process_name = f'process_{pid}' if pid else 'unknown'
 
                         # 测量RTT
                         rtt = self.get_rtt(self.fix_server_ip, self.fix_server_port)
@@ -96,7 +114,7 @@ class TCPMonitor:
                             'remote_address': remote_addr,
                             'status': status,
                             'rtt': rtt,
-                            'pid': int(pid) if pid.isdigit() else None,
+                            'pid': int(pid) if pid and pid.isdigit() else None,
                             'process_name': process_name,
                             'created_at': datetime.now().isoformat(),
                             'proxy_server': proxy_name
